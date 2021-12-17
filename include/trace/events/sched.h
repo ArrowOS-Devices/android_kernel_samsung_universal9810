@@ -745,25 +745,6 @@ TRACE_EVENT(sched_load_avg_cpu,
 		  __entry->util_avg_pelt, __entry->util_avg_walt)
 );
 
-TRACE_EVENT(sched_rt_load_avg_cpu,
-
-	TP_PROTO(int cpu, struct rt_rq *rt_rq),
-
-	TP_ARGS(cpu, rt_rq),
-
-	TP_STRUCT__entry(
-		__field(int,		cpu)
-		__field(unsigned long,	util_avg)
-	),
-
-	TP_fast_assign(
-		__entry->cpu = cpu;
-		__entry->util_avg = rt_rq->avg.util_avg;
-	),
-
-	TP_printk("cpu=%d util_avg=%lu ", __entry->cpu, __entry->util_avg)
-);
-
 TRACE_EVENT(sched_load_balance_cpu,
 
 	TP_PROTO(unsigned int src, unsigned int dst),
