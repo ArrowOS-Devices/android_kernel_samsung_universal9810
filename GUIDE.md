@@ -15,5 +15,5 @@
 ```bash
 make mrpropper
 make ARCH=arm64 exynos9810-starlte_defconfig
-ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make all
+CC=clang ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- make
 ```
