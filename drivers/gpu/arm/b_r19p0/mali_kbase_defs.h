@@ -71,17 +71,13 @@
 #include <linux/regulator/consumer.h>
 #include <linux/memory_group_manager.h>
 
-/* MALI_SEC_INTEGRATION */
-#include <platform/exynos/gpu_integration_defs.h>
-
 #if defined(CONFIG_PM_RUNTIME) || \
 	(defined(CONFIG_PM) && LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
 #define KBASE_PM_RUNTIME 1
 #endif
 
 /** Enable SW tracing when set */
-/* MALI_SEC_INTEGRATION */
-#if defined(CONFIG_MALI_MIDGARD_ENABLE_TRACE) || defined(CONFIG_MALI_EXYNOS_TRACE)
+#ifdef CONFIG_MALI_MIDGARD_ENABLE_TRACE
 #define KBASE_TRACE_ENABLE 1
 #endif
 
@@ -162,19 +158,9 @@
 #define KBASE_LOCK_REGION_MAX_SIZE (63)
 #define KBASE_LOCK_REGION_MIN_SIZE (11)
 
-/* MALI_SEC_INTEGRATION */
-#ifdef CONFIG_MALI_EXYNOS_TRACE
-#define KBASE_TRACE_SIZE_LOG2 10	/* 1024 entries */
-#else
 #define KBASE_TRACE_SIZE_LOG2 8	/* 256 entries */
-#endif
 #define KBASE_TRACE_SIZE (1 << KBASE_TRACE_SIZE_LOG2)
 #define KBASE_TRACE_MASK ((1 << KBASE_TRACE_SIZE_LOG2)-1)
-
-/**
- * Maximum number of GPU memory region zones
- */
-#define KBASE_REG_ZONE_MAX 4ul
 
 #include "mali_kbase_js_defs.h"
 #include "mali_kbase_hwaccess_defs.h"
@@ -631,14 +617,9 @@ struct kbase_jd_atom {
 	u32 device_nr;
 	u64 jc;
 	void *softjob_data;
-	/* MALI_SEC_INTEGRATION */
-	spinlock_t fence_lock;
 #if defined(CONFIG_SYNC)
 	struct sync_fence *fence;
 	struct sync_fence_waiter sync_waiter;
-	/* MALI_SEC_INTEGRATION */
-	struct mutex fence_mt;
-	struct timer_list fence_timer;
 #endif				/* CONFIG_SYNC */
 #if defined(CONFIG_MALI_DMA_FENCE) || defined(CONFIG_SYNC_FILE)
 	struct {
@@ -1041,11 +1022,7 @@ struct kbase_trace {
 	u64 atom_udata[2];
 	u64 gpu_addr;
 	unsigned long info_val;
-#ifdef CONFIG_MALI_EXYNOS_TRACE
-	enum kbase_trace_code code;
-#else
 	u8 code;
-#endif
 	u8 jobslot;
 	u8 refcount;
 	u8 flags;
@@ -1075,9 +1052,6 @@ struct kbase_pm_device_data {
 	int active_count;
 	/** Flag indicating suspending/suspended */
 	bool suspending;
-
-	/* MALI_SEC_INTEGRATION */
-	wait_queue_head_t suspending_wait;
 	/* Wait queue set when active_count == 0 */
 	wait_queue_head_t zero_active_count_wait;
 
@@ -1087,10 +1061,6 @@ struct kbase_pm_device_data {
 	 */
 	u64 debug_core_mask[BASE_JM_MAX_NR_SLOTS];
 	u64 debug_core_mask_all;
-#ifdef CONFIG_MALI_GPU_CORE_MASK_SELECTION
-	/* MALI_SEC_INTEGRATION */
-	u64 debug_core_mask_info;
-#endif
 
 	/**
 	 * Callback for initializing the runtime power management.
@@ -1687,10 +1657,6 @@ struct kbase_device {
 	struct dentry *mali_debugfs_directory;
 	struct dentry *debugfs_ctx_directory;
 
-	/* MALI_SEC_INTEGRATION */
-	/* debugfs entry for trace */
-	struct dentry *trace_dentry;
-
 #ifdef CONFIG_MALI_DEBUG
 	u64 debugfs_as_read_bitmap;
 #endif /* CONFIG_MALI_DEBUG */
@@ -1763,9 +1729,6 @@ struct kbase_device {
 	spinlock_t hwaccess_lock;
 
 	struct mutex mmu_hw_mutex;
-
-	/* MALI_SEC_INTEGRATION */
-	struct kbase_vendor_callbacks *vendor_callbacks;
 
 	/* See KBASE_SERIALIZE_* for details */
 	u8 serialize_jobs;
@@ -1937,21 +1900,6 @@ struct kbase_sub_alloc {
 };
 
 /**
- * struct kbase_reg_zone - Information about GPU memory region zones
- * @base_pfn: Page Frame Number in GPU virtual address space for the start of
- *            the Zone
- * @va_size_pages: Size of the Zone in pages
- *
- * Track information about a zone KBASE_REG_ZONE() and related macros.
- * In future, this could also store the &rb_root that are currently in
- * &kbase_context
- */
-struct kbase_reg_zone {
-	u64 base_pfn;
-	u64 va_size_pages;
-};
-
-/**
  * struct kbase_context - Kernel base context
  *
  * @filp:                 Pointer to the struct file corresponding to device file
@@ -2001,7 +1949,6 @@ struct kbase_reg_zone {
  * @reg_rbtree_exec:      RB tree of the memory regions allocated from the EXEC_VA
  *                        zone of the GPU virtual address space. Used for GPU-executable
  *                        allocations which don't need the SAME_VA property.
- * @reg_zone:             Zone information for the reg_rbtree_<...> members.
  * @cookies:              Bitmask containing of BITS_PER_LONG bits, used mainly for
  *                        SAME_VA allocations to defer the reservation of memory region
  *                        (from the GPU virtual address space) from base_mem_alloc
@@ -2076,6 +2023,9 @@ struct kbase_reg_zone {
  *                        created the context. Used for accounting the physical
  *                        pages used for GPU allocations, done for the context,
  *                        to the memory consumed by the process.
+ * @same_va_end:          End address of the SAME_VA zone (in 4KB page units)
+ * @exec_va_start:        Start address of the EXEC_VA zone (in 4KB page units)
+ *                        or U64_MAX if the EXEC_VA zone is uninitialized.
  * @gpu_va_end:           End address of the GPU va space (in 4KB page units)
  * @jit_va:               Indicates if a JIT_VA zone has been created.
  * @mem_profile_data:     Buffer containing the profiling information provided by
@@ -2207,7 +2157,6 @@ struct kbase_context {
 	struct rb_root reg_rbtree_same;
 	struct rb_root reg_rbtree_custom;
 	struct rb_root reg_rbtree_exec;
-	struct kbase_reg_zone reg_zone[KBASE_REG_ZONE_MAX];
 
 
 	unsigned long    cookies;
@@ -2242,6 +2191,8 @@ struct kbase_context {
 
 	spinlock_t         mm_update_lock;
 	struct mm_struct __rcu *process_mm;
+	u64 same_va_end;
+	u64 exec_va_start;
 	u64 gpu_va_end;
 	bool jit_va;
 
@@ -2279,17 +2230,6 @@ struct kbase_context {
 
 	struct timer_list soft_job_timeout;
 
-	/* MALI_SEC_INTEGRATION */
-	int ctx_status;
-	char name[CTX_NAME_SIZE];
-	/* MALI_SEC_INTEGRATION */
-	bool destroying_context;
-	atomic_t mem_profile_showing_state;
-	wait_queue_head_t mem_profile_wait;
-
-	/* MALI_SEC_INTEGRATION */
-	bool need_to_force_schedule_out;
-
 	struct kbase_va_region *jit_alloc[256];
 	u8 jit_max_allocations;
 	u8 jit_current_allocations;
@@ -2325,11 +2265,6 @@ struct kbase_context {
 
 	int priority;
 	s16 atoms_count[KBASE_JS_ATOM_SCHED_PRIO_COUNT];
-
-	/* MALI_SEC_INTEGRATION */
-#ifdef CONFIG_MALI_SEC_VK_BOOST
-	bool ctx_vk_need_qos;
-#endif
 };
 
 #ifdef CONFIG_MALI_CINSTR_GWT
