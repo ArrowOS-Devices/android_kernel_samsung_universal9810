@@ -715,6 +715,10 @@ static u64 kbase_pm_l2_update_state(struct kbase_device *kbdev)
 
 	if (kbdev->pm.backend.invoke_poweroff_wait_wq_when_l2_off &&
 			backend->l2_state == KBASE_L2_OFF) {
+
+		/* MALI_SEC_INTEGRATION */
+		KBASE_TRACE_ADD(kbdev, KBASE_DEVICE_PM_WAIT_WQ_QUEUE_WORK, NULL, NULL, 0u, 0u);
+
 		kbdev->pm.backend.invoke_poweroff_wait_wq_when_l2_off = false;
 		queue_work(kbdev->pm.backend.gpu_poweroff_wait_wq,
 				&kbdev->pm.backend.gpu_poweroff_wait_work);
@@ -1437,7 +1441,15 @@ void kbase_pm_clock_on(struct kbase_device *kbdev, bool is_resume)
 	if (reset_required) {
 		/* GPU state was lost, reset GPU to ensure it is in a
 		 * consistent state */
+		/* MALI_SEC_INTEGRATION */
+		if (kbdev->vendor_callbacks->init_hw)
+			kbdev->vendor_callbacks->init_hw(kbdev);
+
 		kbase_pm_init_hw(kbdev, PM_ENABLE_IRQS);
+
+		/* MALI_SEC_INTEGRATION */
+		if (kbdev->pm.backend.callback_power_dvfs_on)
+			kbdev->pm.backend.callback_power_dvfs_on(kbdev);
 	}
 
 	mutex_lock(&kbdev->mmu_hw_mutex);
@@ -1478,6 +1490,27 @@ bool kbase_pm_clock_off(struct kbase_device *kbdev, bool is_suspend)
 	}
 
 	KBASE_TRACE_ADD(kbdev, PM_GPU_OFF, NULL, NULL, 0u, 0u);
+
+    /* MALI_SEC_SECURE_RENDERING */
+#ifdef CONFIG_MALI_EXYNOS_SECURE_RENDERING
+    if (kbdev->protected_mode == true) {
+        int err = 0;
+
+        WARN_ONCE(!kbdev->protected_ops,
+                "Cannot disable secure mode: secure callbacks not specified.\n");
+
+        if (kbdev->protected_ops) {
+            /* Switch GPU to non-secure mode */
+            err = kbdev->protected_ops->protected_mode_disable(
+                kbdev->protected_dev);
+
+            if (err)
+                dev_warn(kbdev->dev, "Failed to disable secure mode: %d\n", err);
+            else
+                kbdev->protected_mode = false;
+        }
+    }
+#endif
 
 	/* Disable interrupts. This also clears any outstanding interrupts */
 	kbase_pm_disable_interrupts(kbdev);
@@ -1817,6 +1850,8 @@ static int kbase_pm_do_reset(struct kbase_device *kbdev)
 	return -EINVAL;
 }
 
+/* MALI_SEC_SECURE_RENDERING */
+#ifndef CONFIG_MALI_EXYNOS_SECURE_RENDERING
 static int kbasep_protected_mode_enable(struct protected_mode_device *pdev)
 {
 	struct kbase_device *kbdev = pdev->data;
@@ -1839,6 +1874,7 @@ struct protected_mode_ops kbase_native_protected_ops = {
 	.protected_mode_enable = kbasep_protected_mode_enable,
 	.protected_mode_disable = kbasep_protected_mode_disable
 };
+#endif
 
 int kbase_pm_init_hw(struct kbase_device *kbdev, unsigned int flags)
 {
@@ -1872,7 +1908,12 @@ int kbase_pm_init_hw(struct kbase_device *kbdev, unsigned int flags)
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, irq_flags);
 
 	/* Soft reset the GPU */
+	/* MALI_SEC_SECURE_RENDERING */
+#ifdef CONFIG_MALI_EXYNOS_SECURE_RENDERING
+    if (kbdev->protected_mode_support && kbdev->protected_mode)
+#else
 	if (kbdev->protected_mode_support)
+#endif
 		err = kbdev->protected_ops->protected_mode_disable(
 				kbdev->protected_dev);
 	else

@@ -37,6 +37,9 @@ struct kbase_hwc_dma_mapping {
 	size_t      size;
 };
 
+/* MALI_SEC_INTEGRATION */
+struct kbase_mem_phy_alloc;
+
 /**
  * kbase_mem_alloc - Create a new allocation for GPU
  *
