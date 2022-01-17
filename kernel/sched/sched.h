@@ -569,10 +569,10 @@ struct rt_rq {
 	/* Nests inside the rq lock: */
 	raw_spinlock_t rt_runtime_lock;
 
+	struct rq *rq;
 #ifdef CONFIG_RT_GROUP_SCHED
 	unsigned long rt_nr_boosted;
 
-	struct rq *rq;
 	struct task_group *tg;
 	unsigned long propagate_avg;
 #ifndef CONFIG_64BIT
@@ -1339,6 +1339,7 @@ static inline u64 global_rt_runtime(void)
 	return (u64)sysctl_sched_rt_runtime * NSEC_PER_USEC;
 }
 
+#ifdef CONFIG_RT_GROUP_SCHED
 #define rt_entity_is_task(rt_se) (!(rt_se)->my_q)
 
 static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
@@ -1348,6 +1349,7 @@ static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)
 #endif
 	return container_of(rt_se, struct task_struct, rt);
 }
+#endif /* CONFIG_RT_GROUP_SCHED */
 
 static inline int task_current(struct rq *rq, struct task_struct *p)
 {

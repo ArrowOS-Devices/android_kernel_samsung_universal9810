@@ -676,7 +676,6 @@ TRACE_EVENT(sched_load_avg_task,
 );
 
 TRACE_EVENT(sched_rt_load_avg_task,
-
 	TP_PROTO(struct task_struct *tsk, struct sched_avg *avg),
 
 	TP_ARGS(tsk, avg),

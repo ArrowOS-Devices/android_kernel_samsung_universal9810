@@ -1966,6 +1966,7 @@ static void remove_entity_load_avg(struct sched_rt_entity *rt_se)
 	atomic_long_add(rt_se->avg.util_avg, &rt_rq->removed_util_avg);
 }
 
+#ifdef CONFIG_RT_GROUP_SCHED
 static void attach_task_rt_rq(struct task_struct *p)
 {
 	struct sched_rt_entity *rt_se = &p->rt;
@@ -1975,6 +1976,7 @@ static void attach_task_rt_rq(struct task_struct *p)
 	update_rt_load_avg(now, rt_se, rt_rq, cpu_of(rq_of_rt_rq(rt_rq)));
 	attach_entity_load_avg(rt_rq, rt_se);
 }
+#endif
 
 static void detach_task_rt_rq(struct task_struct *p)
 {
